@@ -82,13 +82,13 @@ class AutoClicker:
                                  selectcolor=PANEL, activebackground=PANEL,
                                  activeforeground=TEXT, font=("Segoe UI", 10),
                                  highlightthickness=0)
-        left_rb.pack(side="left", padx=(8, 0))
+        left_rb.pack(side="left", padx=(12, 12))
         right_rb = tk.Radiobutton(row, text="Right", value="right",
                                   variable=self.click_var, bg=PANEL, fg=TEXT,
                                   selectcolor=PANEL, activebackground=PANEL,
                                   activeforeground=TEXT, font=("Segoe UI", 10),
                                   highlightthickness=0)
-        right_rb.pack(side="right", padx=(8, 0))
+        right_rb.pack(side="left")
 
         hpanel = tk.Frame(self.root, bg=PANEL)
         hpanel.pack(fill="x", padx=16, pady=8)
