@@ -1,0 +1,20 @@
+<component name="InspectionProjectProfileManager">
+  <profile version="1.0">
+    <option name="myName" value="Project Default" />
+    <inspection_tool class="PyPackageRequirementsInspection" enabled="true" level="WARNING" enabled_by_default="true">
+      <option name="ignoredPackages">
+        <list>
+          <option value="Flask-WTF" />
+          <option value="email-validator" />
+          <option value="flask-mail" />
+          <option value="Flask" />
+          <option value="Flask-SQLAlchemy" />
+          <option value="Werkzeug" />
+          <option value="itsdangerous" />
+          <option value="PyQt6" />
+          <option value="pyinstaller" />
+        </list>
+      </option>
+    </inspection_tool>
+  </profile>
+</component>
