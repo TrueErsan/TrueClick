@@ -30,6 +30,10 @@ class AutoClicker:
 
         self._build_ui()
 
+        self.root.update_idletasks()
+        self.root.minsize(self.root.winfo_reqwidth(),
+                          self.root.winfo_reqheight())
+
         self.toggle_handle = keyboard.add_hotkey(self.hotkey, self.toggle)
         self.stop_handle = keyboard.add_hotkey("esc", self.stop)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -47,26 +51,44 @@ class AutoClicker:
 
         row = tk.Frame(panel, bg=PANEL)
         row.pack(fill="x", padx=12, pady=(14, 6))
-        tk.Label(row, text="Delay (sec)", bg=PANEL, fg=TEXT,
+        tk.Label(row, text="Delay", bg=PANEL, fg=TEXT,
                  font=("Segoe UI", 10)).pack(side="left")
-        self.delay_var = tk.StringVar(value="0.05")
-        tk.Entry(row, textvariable=self.delay_var, bg=BG, fg=TEXT,
-                 insertbackground=TEXT, relief="flat",
-                 highlightthickness=1, highlightbackground="#3a3a3a",
-                 highlightcolor=ACCENT, font=("Segoe UI", 10)
-                 ).pack(side="right", ipady=4, ipadx=4)
+
+        time_frame = tk.Frame(panel, bg=PANEL)
+        time_frame.pack(fill="x", padx=12, pady=(0, 14))
+        self.h_var = tk.StringVar(value="0")
+        self.m_var = tk.StringVar(value="0")
+        self.s_var = tk.StringVar(value="1")
+        self.ms_var = tk.StringVar(value="0")
+        for label, var in (("H", self.h_var), ("M", self.m_var),
+                           ("S", self.s_var), ("ms", self.ms_var)):
+            block = tk.Frame(time_frame, bg=PANEL)
+            block.pack(side="left", padx=(0, 10))
+            tk.Entry(block, textvariable=var, width=4, bg=BG, fg=TEXT,
+                     insertbackground=TEXT, relief="flat",
+                     highlightthickness=1, highlightbackground="#3a3a3a",
+                     highlightcolor=ACCENT, font=("Segoe UI", 10),
+                     justify="center").pack()
+            tk.Label(block, text=label, bg=PANEL, fg=MUTED,
+                     font=("Segoe UI", 8)).pack()
 
         row = tk.Frame(panel, bg=PANEL)
         row.pack(fill="x", padx=12, pady=(6, 14))
         tk.Label(row, text="Click type", bg=PANEL, fg=TEXT,
                  font=("Segoe UI", 10)).pack(side="left")
         self.click_var = tk.StringVar(value="left")
-        for text, val in (("Left", "left"), ("Right", "right")):
-            tk.Radiobutton(row, text=text, value=val, variable=self.click_var,
-                           bg=PANEL, fg=TEXT, selectcolor=PANEL,
-                           activebackground=PANEL, activeforeground=TEXT,
-                           font=("Segoe UI", 10), highlightthickness=0
-                           ).pack(side="right", padx=(8, 0))
+        left_rb = tk.Radiobutton(row, text="Left", value="left",
+                                 variable=self.click_var, bg=PANEL, fg=TEXT,
+                                 selectcolor=PANEL, activebackground=PANEL,
+                                 activeforeground=TEXT, font=("Segoe UI", 10),
+                                 highlightthickness=0)
+        left_rb.pack(side="left", padx=(8, 0))
+        right_rb = tk.Radiobutton(row, text="Right", value="right",
+                                  variable=self.click_var, bg=PANEL, fg=TEXT,
+                                  selectcolor=PANEL, activebackground=PANEL,
+                                  activeforeground=TEXT, font=("Segoe UI", 10),
+                                  highlightthickness=0)
+        right_rb.pack(side="right", padx=(8, 0))
 
         hpanel = tk.Frame(self.root, bg=PANEL)
         hpanel.pack(fill="x", padx=16, pady=8)
@@ -118,29 +140,50 @@ class AutoClicker:
                          font=("Segoe UI", 10, "bold"), padx=14, pady=6,
                          cursor="hand2")
 
+    def _inside_window(self):
+        x1 = self.root.winfo_rootx()
+        y1 = self.root.winfo_rooty()
+        x2 = x1 + self.root.winfo_width()
+        y2 = y1 + self.root.winfo_height()
+        px = self.root.winfo_pointerx()
+        py = self.root.winfo_pointery()
+        return x1 <= px <= x2 and y1 <= py <= y2
+
     def _click_loop(self):
         while self.running:
-            if self.click_var.get() == "left":
-                mouse.click("left")
-            else:
-                mouse.click("right")
+            if not self._inside_window():
+                if self.click_var.get() == "left":
+                    mouse.click("left")
+                else:
+                    mouse.click("right")
             time.sleep(self.delay)
 
+    def _get_delay(self):
+        def to_float(var):
+            try:
+                return float(var.get())
+            except ValueError:
+                return 0.0
+        total = (to_float(self.h_var) * 3600
+                 + to_float(self.m_var) * 60
+                 + to_float(self.s_var)
+                 + to_float(self.ms_var) / 1000)
+        return max(0.001, total)
+
     def start(self):
-        try:
-            self.delay = float(self.delay_var.get())
-        except ValueError:
-            self.delay = 0.05
-        if self.delay < 0.001:
-            self.delay = 0.001
+        if self.running:
+            return
+        self.delay = self._get_delay()
         self.running = True
         self.status_label.config(text="RUNNING", fg=GREEN)
+        self.start_btn.config(state="disabled")
         self.thread = threading.Thread(target=self._click_loop, daemon=True)
         self.thread.start()
 
     def stop(self):
         self.running = False
         self.status_label.config(text="STOPPED", fg=RED)
+        self.start_btn.config(state="normal")
 
     def toggle(self):
         if self.running:
