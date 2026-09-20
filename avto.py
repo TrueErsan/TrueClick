@@ -76,19 +76,19 @@ class AutoClicker:
         row.pack(fill="x", padx=12, pady=(6, 14))
         tk.Label(row, text="Click type", bg=PANEL, fg=TEXT,
                  font=("Segoe UI", 10)).pack(side="left")
-        self.click_var = tk.StringVar(value="left")
-        left_rb = tk.Radiobutton(row, text="Left", value="left",
-                                 variable=self.click_var, bg=PANEL, fg=TEXT,
-                                 selectcolor=PANEL, activebackground=PANEL,
-                                 activeforeground=TEXT, font=("Segoe UI", 10),
-                                 highlightthickness=0)
-        left_rb.pack(side="left", padx=(12, 12))
-        right_rb = tk.Radiobutton(row, text="Right", value="right",
-                                  variable=self.click_var, bg=PANEL, fg=TEXT,
-                                  selectcolor=PANEL, activebackground=PANEL,
-                                  activeforeground=TEXT, font=("Segoe UI", 10),
-                                  highlightthickness=0)
-        right_rb.pack(side="left")
+        self.click_var = tk.StringVar(value="Left Button")
+        self.click_display = tk.StringVar(value="Left Button")
+        self.click_btn = tk.Button(row, textvariable=self.click_display,
+                                   relief="flat", bd=0, bg=BG, fg=TEXT,
+                                   activebackground=BG,
+                                   activeforeground=TEXT,
+                                   font=("Segoe UI", 10), padx=10, pady=3,
+                                   cursor="hand2", highlightthickness=1,
+                                   highlightbackground="#3a3a3a",
+                                   highlightcolor=ACCENT)
+        self.click_btn.pack(side="left", padx=(12, 0))
+        self.click_btn.bind("<Button-1>",
+                            lambda e: self._toggle_click_menu())
 
         hpanel = tk.Frame(self.root, bg=PANEL)
         hpanel.pack(fill="x", padx=16, pady=8)
@@ -129,6 +129,61 @@ class AutoClicker:
         self.footer_label.pack(side="bottom", pady=12)
         self._update_footer()
 
+    def _toggle_click_menu(self):
+        if getattr(self, "_click_popup", None) and self._click_popup.winfo_exists():
+            self._close_click_menu()
+            return
+        self._open_click_menu()
+
+    def _open_click_menu(self):
+        self._click_popup = tk.Toplevel(self.root)
+        self._click_popup.overrideredirect(True)
+        self._click_popup.configure(bg="#3a3a3a")
+        self._click_popup.attributes("-topmost", True)
+        frame = tk.Frame(self._click_popup, bg=PANEL)
+        frame.pack(padx=1, pady=1)
+        for i, text in enumerate(("Left Button", "Right Button",
+                                  "Middle Button")):
+            item = tk.Label(frame, text=text, bg=PANEL,
+                            fg=ACCENT if text == self.click_var.get() else TEXT,
+                            font=("Segoe UI", 10), padx=20, pady=6,
+                            anchor="w", cursor="hand2")
+            item.grid(row=i, column=0, sticky="we")
+            item.bind("<Enter>",
+                      lambda e, w=item: w.config(bg=ACCENT, fg="white"))
+            item.bind("<Leave>",
+                      lambda e, w=item: w.config(
+                          bg=PANEL,
+                          fg=ACCENT if (w.cget("text")
+                                        == self.click_var.get()) else TEXT))
+            item.bind("<Button-1>",
+                      lambda e, t=text: self._choose_click(t))
+        self._click_popup.bind("<Escape>", lambda e: self._close_click_menu())
+        self._click_popup.bind("<FocusOut>",
+                               lambda e: self._close_click_menu())
+        self.root.bind("<Button-1>", self._on_outside_click)
+        self._click_popup.update_idletasks()
+        x = self.click_btn.winfo_rootx()
+        y = self.click_btn.winfo_rooty() + self.click_btn.winfo_height()
+        self._click_popup.geometry("+{}+{}".format(x, y))
+        self._click_popup.focus_force()
+
+    def _on_outside_click(self, event):
+        popup = getattr(self, "_click_popup", None)
+        if popup and popup.winfo_exists():
+            self._close_click_menu()
+
+    def _choose_click(self, text):
+        self.click_var.set(text)
+        self._close_click_menu()
+
+    def _close_click_menu(self):
+        if getattr(self, "_click_popup", None) and self._click_popup.winfo_exists():
+            self._click_popup.destroy()
+        self._click_popup = None
+        self.root.unbind("<Button-1>")
+        self.click_display.set(self.click_var.get())
+
     def _update_footer(self):
         self.footer_label.config(
             text="Esc = stop  |  {} = toggle".format(self.hotkey.upper()))
@@ -152,10 +207,7 @@ class AutoClicker:
     def _click_loop(self):
         while self.running:
             if not self._inside_window():
-                if self.click_var.get() == "left":
-                    mouse.click("left")
-                else:
-                    mouse.click("right")
+                mouse.click(self.click_var.get().split()[0].lower())
             time.sleep(self.delay)
 
     def _get_delay(self):
