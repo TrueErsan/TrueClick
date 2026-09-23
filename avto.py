@@ -1,5 +1,8 @@
+import os
+import sys
 import threading
 import time
+import ctypes
 import keyboard
 import mouse
 import tkinter as tk
@@ -14,6 +17,23 @@ GREEN = "#4ec94e"
 RED = "#ff5c5c"
 
 
+def _resource_path(name):
+    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, name)
+
+
+def _enable_dark_title_bar(root):
+    try:
+        hwnd = ctypes.windll.user32.GetParent(root.winfo_id())
+        value = ctypes.c_int(1)
+        for attr in (20, 19):
+            if ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                    hwnd, attr, ctypes.byref(value), ctypes.sizeof(value)) == 0:
+                break
+    except Exception:
+        pass
+
+
 class AutoClicker:
     def __init__(self):
         self.running = False
@@ -23,10 +43,15 @@ class AutoClicker:
         self.hotkey = "f6"
 
         self.root = tk.Tk()
-        self.root.title("AutoClicker")
+        self.root.title("TrueClick")
         self.root.geometry("340x460")
         self.root.configure(bg=BG)
         self.root.resizable(True, True)
+        try:
+            self.root.iconbitmap(_resource_path("icon.ico"))
+        except tk.TclError:
+            pass
+        _enable_dark_title_bar(self.root)
 
         self._build_ui()
 
@@ -34,17 +59,15 @@ class AutoClicker:
         self.root.minsize(self.root.winfo_reqwidth(),
                           self.root.winfo_reqheight())
 
+        self.root.bind("<Button-1>", self._on_root_click, "+")
         self.toggle_handle = keyboard.add_hotkey(self.hotkey, self.toggle)
-        self.stop_handle = keyboard.add_hotkey("esc", self.stop)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _build_ui(self):
         header = tk.Frame(self.root, bg=BG)
         header.pack(fill="x", padx=16, pady=(18, 6))
-        tk.Label(header, text="AutoClicker", bg=BG, fg=TEXT,
+        tk.Label(header, text="TrueClick", bg=BG, fg=ACCENT,
                  font=("Segoe UI", 18, "bold")).pack()
-        tk.Label(header, text="Simple and fast mouse autoclicker",
-                 bg=BG, fg=MUTED, font=("Segoe UI", 9)).pack()
 
         panel = tk.Frame(self.root, bg=PANEL)
         panel.pack(fill="x", padx=16, pady=8)
@@ -60,15 +83,24 @@ class AutoClicker:
         self.m_var = tk.StringVar(value="0")
         self.s_var = tk.StringVar(value="1")
         self.ms_var = tk.StringVar(value="0")
-        for label, var in (("H", self.h_var), ("M", self.m_var),
-                           ("S", self.s_var), ("ms", self.ms_var)):
+        for label, var, maximum in (("H", self.h_var, 23),
+                                    ("M", self.m_var, 59),
+                                    ("S", self.s_var, 59),
+                                    ("ms", self.ms_var, 999)):
             block = tk.Frame(time_frame, bg=PANEL)
             block.pack(side="left", padx=(0, 10))
-            tk.Entry(block, textvariable=var, width=4, bg=BG, fg=TEXT,
-                     insertbackground=TEXT, relief="flat",
-                     highlightthickness=1, highlightbackground="#3a3a3a",
-                     highlightcolor=ACCENT, font=("Segoe UI", 10),
-                     justify="center").pack()
+            entry = tk.Entry(block, textvariable=var, width=4, bg=BG, fg=TEXT,
+                             insertbackground=TEXT, relief="flat",
+                             highlightthickness=1, highlightbackground="#3a3a3a",
+                             highlightcolor=ACCENT, font=("Segoe UI", 10),
+                             justify="center")
+            entry.pack()
+            entry.bind("<FocusIn>",
+                       lambda e, v=var: v.set("") if v.get() == "0" else None)
+            entry.bind("<KeyRelease>",
+                       lambda e, v=var, mx=maximum: self._clamp_delay(v, mx))
+            entry.bind("<FocusOut>",
+                       lambda e, v=var: v.set(v.get() or "0"))
             tk.Label(block, text=label, bg=PANEL, fg=MUTED,
                      font=("Segoe UI", 8)).pack()
 
@@ -96,17 +128,14 @@ class AutoClicker:
         tk.Label(hpanel, text="Toggle hotkey", bg=PANEL, fg=TEXT,
                  font=("Segoe UI", 10)).pack(padx=12, pady=(12, 6), anchor="w")
         row = tk.Frame(hpanel, bg=PANEL)
-        row.pack(fill="x", padx=12, pady=(0, 4))
+        row.pack(fill="x", padx=12, pady=(4, 14))
         self.hotkey_label = tk.Label(row, text=self.hotkey.upper(), bg=BG,
                                      fg=ACCENT, font=("Segoe UI", 12, "bold"),
-                                     width=8, pady=6)
-        self.hotkey_label.pack(side="left")
+                                     width=8, pady=4)
+        self.hotkey_label.pack(side="left", anchor="center")
         self.capture_btn = self._accent_button(row, "Change",
                                                self.change_hotkey)
-        self.capture_btn.pack(side="right")
-        self.hotkey_hint = tk.Label(hpanel, text="Set a new key for toggle",
-                                    bg=PANEL, fg=MUTED, font=("Segoe UI", 9))
-        self.hotkey_hint.pack(padx=12, pady=(0, 12), anchor="w")
+        self.capture_btn.pack(side="right", anchor="center")
 
         self.status_label = tk.Label(self.root, text="STOPPED", bg=BG,
                                      fg=RED, font=("Segoe UI", 12, "bold"))
@@ -161,17 +190,23 @@ class AutoClicker:
         self._click_popup.bind("<Escape>", lambda e: self._close_click_menu())
         self._click_popup.bind("<FocusOut>",
                                lambda e: self._close_click_menu())
-        self.root.bind("<Button-1>", self._on_outside_click)
         self._click_popup.update_idletasks()
         x = self.click_btn.winfo_rootx()
         y = self.click_btn.winfo_rooty() + self.click_btn.winfo_height()
         self._click_popup.geometry("+{}+{}".format(x, y))
         self._click_popup.focus_force()
 
-    def _on_outside_click(self, event):
+    def _on_root_click(self, event):
+        if event.widget is self.click_btn:
+            return
         popup = getattr(self, "_click_popup", None)
         if popup and popup.winfo_exists():
             self._close_click_menu()
+            return
+        if isinstance(event.widget, (tk.Entry, tk.Button,
+                                     tk.Radiobutton, tk.Checkbutton)):
+            return
+        self.root.focus_set()
 
     def _choose_click(self, text):
         self.click_var.set(text)
@@ -181,12 +216,11 @@ class AutoClicker:
         if getattr(self, "_click_popup", None) and self._click_popup.winfo_exists():
             self._click_popup.destroy()
         self._click_popup = None
-        self.root.unbind("<Button-1>")
         self.click_display.set(self.click_var.get())
 
     def _update_footer(self):
         self.footer_label.config(
-            text="Esc = stop  |  {} = toggle".format(self.hotkey.upper()))
+            text="{} = toggle start/stop".format(self.hotkey.upper()))
 
     def _accent_button(self, parent, text, command):
         return tk.Button(parent, text=text, command=command, bg=ACCENT,
@@ -211,16 +245,26 @@ class AutoClicker:
             time.sleep(self.delay)
 
     def _get_delay(self):
-        def to_float(var):
+        def to_int(var):
             try:
-                return float(var.get())
+                return int(float(var.get()))
             except ValueError:
-                return 0.0
-        total = (to_float(self.h_var) * 3600
-                 + to_float(self.m_var) * 60
-                 + to_float(self.s_var)
-                 + to_float(self.ms_var) / 1000)
-        return max(0.001, total)
+                return 0
+        return max(0.001,
+                   to_int(self.h_var) * 3600
+                   + to_int(self.m_var) * 60
+                   + to_int(self.s_var)
+                   + to_int(self.ms_var) / 1000)
+
+    def _clamp_delay(self, var, maximum):
+        val = var.get()
+        digits = "".join(ch for ch in val if ch.isdigit())
+        if not digits:
+            var.set("")
+            return
+        num = int(digits)
+        if num > maximum:
+            var.set(str(maximum))
 
     def start(self):
         if self.running:
@@ -247,7 +291,6 @@ class AutoClicker:
         if self.capturing:
             return
         self.capturing = True
-        self.hotkey_hint.config(text="Press any key...", fg=ACCENT)
         self.capture_btn.config(state="disabled")
         threading.Thread(target=self._capture_key, daemon=True).start()
 
@@ -266,15 +309,12 @@ class AutoClicker:
             self.hotkey = key.lower()
             self.toggle_handle = keyboard.add_hotkey(self.hotkey, self.toggle)
             self.hotkey_label.config(text=self.hotkey.upper())
-            self.hotkey_hint.config(text="Set a new key for toggle", fg=MUTED)
             self._update_footer()
         else:
-            self.hotkey_hint.config(text="Canceled, keeping current key",
-                                    fg=MUTED)
+            pass
 
     def _on_close(self):
         keyboard.remove_hotkey(self.toggle_handle)
-        keyboard.remove_hotkey(self.stop_handle)
         self.root.destroy()
 
     def run(self):
