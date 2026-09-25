@@ -30,8 +30,80 @@ def _enable_dark_title_bar(root):
             if ctypes.windll.dwmapi.DwmSetWindowAttribute(
                     hwnd, attr, ctypes.byref(value), ctypes.sizeof(value)) == 0:
                 break
+        caption = ctypes.c_int(0x00262626)
+        ctypes.windll.dwmapi.DwmSetWindowAttribute(
+            hwnd, 35, ctypes.byref(caption), ctypes.sizeof(caption))
     except Exception:
         pass
+
+
+class PopupSelect(tk.Frame):
+    def __init__(self, parent, options, variable):
+        super().__init__(parent, bg=PANEL)
+        self.options = options
+        self.var = variable
+        self.group = []
+        self.popup = None
+        self.var.set(options[0])
+        self.display = tk.StringVar(value=options[0])
+        self.btn = tk.Button(self, textvariable=self.display, relief="flat",
+                             bd=0, bg=BG, fg=TEXT, activebackground=BG,
+                             activeforeground=TEXT, font=("Segoe UI", 10),
+                             padx=10, pady=3, cursor="hand2",
+                             highlightthickness=1,
+                             highlightbackground="#3a3a3a",
+                             highlightcolor=ACCENT)
+        self.btn.pack(side="left")
+        self.btn.bind("<Button-1>", lambda e: self._toggle())
+
+    def _toggle(self):
+        for other in getattr(self, "group", []):
+            if other is not self and other.popup and other.popup.winfo_exists():
+                other._close()
+        if self.popup and self.popup.winfo_exists():
+            self._close()
+        else:
+            self._open()
+
+    def _open(self):
+        self.popup = tk.Toplevel(self)
+        self.popup.overrideredirect(True)
+        self.popup.configure(bg="#3a3a3a")
+        self.popup.attributes("-topmost", True)
+        frame = tk.Frame(self.popup, bg=PANEL)
+        frame.pack(padx=1, pady=1)
+        for i, text in enumerate(self.options):
+            item = tk.Label(frame, text=text, bg=PANEL,
+                            fg=ACCENT if text == self.var.get() else TEXT,
+                            font=("Segoe UI", 10), padx=20, pady=6,
+                            anchor="w", cursor="hand2")
+            item.grid(row=i, column=0, sticky="we")
+            item.bind("<Enter>",
+                      lambda e, w=item: w.config(bg=ACCENT, fg="white"))
+            item.bind("<Leave>",
+                      lambda e, w=item: w.config(
+                          bg=PANEL,
+                          fg=ACCENT if (w.cget("text")
+                                        == self.var.get()) else TEXT))
+            item.bind("<Button-1>",
+                      lambda e, t=text: self._choose(t))
+        self.popup.bind("<Escape>", lambda e: self._close())
+        self.popup.bind("<FocusOut>", lambda e: self._close())
+        self.popup.update_idletasks()
+        x = self.btn.winfo_rootx()
+        y = self.btn.winfo_rooty() + self.btn.winfo_height()
+        self.popup.geometry("+{}+{}".format(x, y))
+        self.popup.focus_force()
+
+    def _choose(self, text):
+        self.var.set(text)
+        self._close()
+
+    def _close(self):
+        if self.popup and self.popup.winfo_exists():
+            self.popup.destroy()
+        self.popup = None
+        self.display.set(self.var.get())
 
 
 class AutoClicker:
@@ -44,7 +116,7 @@ class AutoClicker:
 
         self.root = tk.Tk()
         self.root.title("TrueClick")
-        self.root.geometry("340x460")
+        self.root.geometry("400x470")
         self.root.configure(bg=BG)
         self.root.resizable(True, True)
         try:
@@ -69,66 +141,89 @@ class AutoClicker:
         tk.Label(header, text="TrueClick", bg=BG, fg=ACCENT,
                  font=("Segoe UI", 18, "bold")).pack()
 
-        panel = tk.Frame(self.root, bg=PANEL)
-        panel.pack(fill="x", padx=16, pady=8)
+        outer = tk.Frame(self.root, bg=BG)
+        outer.pack(fill="x", padx=16, pady=8)
+        panel = tk.Frame(outer, bg="white")
+        panel.pack(fill="x")
+        content = tk.Frame(panel, bg=PANEL)
+        content.pack(fill="x", padx=1, pady=1)
 
-        row = tk.Frame(panel, bg=PANEL)
-        row.pack(fill="x", padx=12, pady=(14, 6))
-        tk.Label(row, text="Delay", bg=PANEL, fg=TEXT,
+        row = tk.Frame(content, bg=PANEL)
+        row.pack(fill="x", padx=10, pady=(12, 6))
+        tk.Label(row, text="Interval", bg=PANEL, fg=TEXT,
                  font=("Segoe UI", 10)).pack(side="left")
 
-        time_frame = tk.Frame(panel, bg=PANEL)
-        time_frame.pack(fill="x", padx=12, pady=(0, 14))
+        time_frame = tk.Frame(content, bg=PANEL)
+        time_frame.pack(fill="x", padx=10, pady=(0, 10))
         self.h_var = tk.StringVar(value="0")
         self.m_var = tk.StringVar(value="0")
-        self.s_var = tk.StringVar(value="1")
-        self.ms_var = tk.StringVar(value="0")
-        for label, var, maximum in (("H", self.h_var, 23),
-                                    ("M", self.m_var, 59),
-                                    ("S", self.s_var, 59),
-                                    ("ms", self.ms_var, 999)):
+        self.s_var = tk.StringVar(value="0")
+        self.ms_var = tk.StringVar(value="1")
+        for label, var, maximum, minimum in (("H", self.h_var, 23, 0),
+                                            ("M", self.m_var, 59, 0),
+                                            ("S", self.s_var, 59, 0),
+                                            ("ms", self.ms_var, 999, 1)):
             block = tk.Frame(time_frame, bg=PANEL)
             block.pack(side="left", padx=(0, 10))
-            entry = tk.Entry(block, textvariable=var, width=4, bg=BG, fg=TEXT,
+            hrow = tk.Frame(block, bg=PANEL)
+            hrow.pack()
+            tk.Label(hrow, text=label, bg=PANEL, fg=MUTED,
+                     font=("Segoe UI", 9)).pack(side="left", padx=(0, 4))
+            entry = tk.Entry(hrow, textvariable=var, width=4, bg=BG, fg=TEXT,
                              insertbackground=TEXT, relief="flat",
                              highlightthickness=1, highlightbackground="#3a3a3a",
                              highlightcolor=ACCENT, font=("Segoe UI", 10),
                              justify="center")
-            entry.pack()
+            entry.pack(side="left")
             entry.bind("<FocusIn>",
                        lambda e, v=var: v.set("") if v.get() == "0" else None)
             entry.bind("<KeyRelease>",
-                       lambda e, v=var, mx=maximum: self._clamp_delay(v, mx))
+                       lambda e, v=var, mx=maximum, mn=minimum:
+                       self._clamp_delay(v, mx, mn))
+            steppers = tk.Frame(hrow, bg=PANEL)
+            steppers.pack(side="left", padx=(4, 0))
+            for sym, delta in (("\u25b2", 1), ("\u25bc", -1)):
+                tk.Button(steppers, text=sym, bd=0, relief="flat", bg=BG,
+                          fg=MUTED, activebackground=PANEL,
+                          activeforeground=TEXT, font=("Segoe UI", 8),
+                          width=2, padx=0, pady=0, cursor="hand2",
+                          command=lambda v=var, mx=maximum, mn=minimum,
+                          d=delta: self._step_delay(v, mx, d, mn)).pack(
+                              side="top", pady=(0, 2))
             entry.bind("<FocusOut>",
-                       lambda e, v=var: v.set(v.get() or "0"))
-            tk.Label(block, text=label, bg=PANEL, fg=MUTED,
-                     font=("Segoe UI", 8)).pack()
+                       lambda e, v=var, mn=minimum: v.set(v.get() or mn))
 
-        row = tk.Frame(panel, bg=PANEL)
-        row.pack(fill="x", padx=12, pady=(6, 14))
-        tk.Label(row, text="Click type", bg=PANEL, fg=TEXT,
+        row = tk.Frame(content, bg=PANEL)
+        row.pack(fill="x", padx=10, pady=(6, 12))
+        tk.Label(row, text="Button:", bg=PANEL, fg=TEXT,
                  font=("Segoe UI", 10)).pack(side="left")
         self.click_var = tk.StringVar(value="Left Button")
-        self.click_display = tk.StringVar(value="Left Button")
-        self.click_btn = tk.Button(row, textvariable=self.click_display,
-                                   relief="flat", bd=0, bg=BG, fg=TEXT,
-                                   activebackground=BG,
-                                   activeforeground=TEXT,
-                                   font=("Segoe UI", 10), padx=10, pady=3,
-                                   cursor="hand2", highlightthickness=1,
-                                   highlightbackground="#3a3a3a",
-                                   highlightcolor=ACCENT)
-        self.click_btn.pack(side="left", padx=(12, 0))
-        self.click_btn.bind("<Button-1>",
-                            lambda e: self._toggle_click_menu())
+        self.click_select = PopupSelect(
+            row, ("Left Button", "Right Button", "Middle Button"),
+            self.click_var)
+        self.click_select.pack(side="left", padx=(12, 0))
+        tk.Label(row, text="Click Type:", bg=PANEL, fg=TEXT,
+                 font=("Segoe UI", 10)).pack(side="left", padx=(10, 0))
+        self.click_mode_var = tk.StringVar(value="Single Click")
+        self.click_mode_select = PopupSelect(
+            row, ("Single Click", "Double Click", "Triple Click", "Hold"),
+            self.click_mode_var)
+        self.click_mode_select.pack(side="left", padx=(8, 0))
+        self.click_select.group = [self.click_select, self.click_mode_select]
+        self.click_mode_select.group = [self.click_select,
+                                        self.click_mode_select]
 
-        hpanel = tk.Frame(self.root, bg=PANEL)
-        hpanel.pack(fill="x", padx=16, pady=8)
+        houter = tk.Frame(self.root, bg=BG)
+        houter.pack(fill="x", padx=16, pady=8)
+        hpanel = tk.Frame(houter, bg="white")
+        hpanel.pack(fill="x")
+        hcontent = tk.Frame(hpanel, bg=PANEL)
+        hcontent.pack(fill="x", padx=1, pady=1)
 
-        tk.Label(hpanel, text="Toggle hotkey", bg=PANEL, fg=TEXT,
+        tk.Label(hcontent, text="Toggle hotkey", bg=PANEL, fg=TEXT,
                  font=("Segoe UI", 10)).pack(padx=12, pady=(12, 6), anchor="w")
-        row = tk.Frame(hpanel, bg=PANEL)
-        row.pack(fill="x", padx=12, pady=(4, 14))
+        row = tk.Frame(hcontent, bg=PANEL)
+        row.pack(fill="x", padx=12, pady=(4, 12))
         self.hotkey_label = tk.Label(row, text=self.hotkey.upper(), bg=BG,
                                      fg=ACCENT, font=("Segoe UI", 12, "bold"),
                                      width=8, pady=4)
@@ -143,7 +238,12 @@ class AutoClicker:
 
         btn_frame = tk.Frame(self.root, bg=BG)
         btn_frame.pack(pady=6)
-        self.start_btn = self._accent_button(btn_frame, "Start", self.start)
+        self.start_btn = tk.Button(btn_frame, text="Start", command=self.start,
+                                   bg=GREEN, fg="white", bd=0, relief="flat",
+                                   activebackground="#3da83d",
+                                   activeforeground="white",
+                                   font=("Segoe UI", 10, "bold"),
+                                   padx=14, pady=6, cursor="hand2")
         self.start_btn.pack(side="left", padx=6)
         self.stop_btn = tk.Button(btn_frame, text="Stop", command=self.stop,
                                   bg="#3a3a3a", fg=TEXT,
@@ -158,65 +258,21 @@ class AutoClicker:
         self.footer_label.pack(side="bottom", pady=12)
         self._update_footer()
 
-    def _toggle_click_menu(self):
-        if getattr(self, "_click_popup", None) and self._click_popup.winfo_exists():
-            self._close_click_menu()
-            return
-        self._open_click_menu()
-
-    def _open_click_menu(self):
-        self._click_popup = tk.Toplevel(self.root)
-        self._click_popup.overrideredirect(True)
-        self._click_popup.configure(bg="#3a3a3a")
-        self._click_popup.attributes("-topmost", True)
-        frame = tk.Frame(self._click_popup, bg=PANEL)
-        frame.pack(padx=1, pady=1)
-        for i, text in enumerate(("Left Button", "Right Button",
-                                  "Middle Button")):
-            item = tk.Label(frame, text=text, bg=PANEL,
-                            fg=ACCENT if text == self.click_var.get() else TEXT,
-                            font=("Segoe UI", 10), padx=20, pady=6,
-                            anchor="w", cursor="hand2")
-            item.grid(row=i, column=0, sticky="we")
-            item.bind("<Enter>",
-                      lambda e, w=item: w.config(bg=ACCENT, fg="white"))
-            item.bind("<Leave>",
-                      lambda e, w=item: w.config(
-                          bg=PANEL,
-                          fg=ACCENT if (w.cget("text")
-                                        == self.click_var.get()) else TEXT))
-            item.bind("<Button-1>",
-                      lambda e, t=text: self._choose_click(t))
-        self._click_popup.bind("<Escape>", lambda e: self._close_click_menu())
-        self._click_popup.bind("<FocusOut>",
-                               lambda e: self._close_click_menu())
-        self._click_popup.update_idletasks()
-        x = self.click_btn.winfo_rootx()
-        y = self.click_btn.winfo_rooty() + self.click_btn.winfo_height()
-        self._click_popup.geometry("+{}+{}".format(x, y))
-        self._click_popup.focus_force()
-
     def _on_root_click(self, event):
-        if event.widget is self.click_btn:
-            return
-        popup = getattr(self, "_click_popup", None)
-        if popup and popup.winfo_exists():
-            self._close_click_menu()
+        for sel in (self.click_select, self.click_mode_select):
+            if event.widget is sel.btn:
+                return
+        closed = False
+        for sel in (self.click_select, self.click_mode_select):
+            if sel.popup and sel.popup.winfo_exists():
+                sel._close()
+                closed = True
+        if closed:
             return
         if isinstance(event.widget, (tk.Entry, tk.Button,
                                      tk.Radiobutton, tk.Checkbutton)):
             return
         self.root.focus_set()
-
-    def _choose_click(self, text):
-        self.click_var.set(text)
-        self._close_click_menu()
-
-    def _close_click_menu(self):
-        if getattr(self, "_click_popup", None) and self._click_popup.winfo_exists():
-            self._click_popup.destroy()
-        self._click_popup = None
-        self.click_display.set(self.click_var.get())
 
     def _update_footer(self):
         self.footer_label.config(
@@ -239,9 +295,26 @@ class AutoClicker:
         return x1 <= px <= x2 and y1 <= py <= y2
 
     def _click_loop(self):
+        button = self.click_var.get().split()[0].lower()
+        mode = self.click_mode_var.get()
+        if mode == "Hold":
+            mouse.press(button)
+            try:
+                while self.running:
+                    time.sleep(self.delay)
+            finally:
+                mouse.release(button)
+            return
         while self.running:
             if not self._inside_window():
-                mouse.click(self.click_var.get().split()[0].lower())
+                if mode == "Double Click":
+                    mouse.double_click(button)
+                elif mode == "Triple Click":
+                    mouse.click(button)
+                    mouse.click(button)
+                    mouse.click(button)
+                else:
+                    mouse.click(button)
             time.sleep(self.delay)
 
     def _get_delay(self):
@@ -256,7 +329,7 @@ class AutoClicker:
                    + to_int(self.s_var)
                    + to_int(self.ms_var) / 1000)
 
-    def _clamp_delay(self, var, maximum):
+    def _clamp_delay(self, var, maximum, minimum=0):
         val = var.get()
         digits = "".join(ch for ch in val if ch.isdigit())
         if not digits:
@@ -265,6 +338,15 @@ class AutoClicker:
         num = int(digits)
         if num > maximum:
             var.set(str(maximum))
+        elif num < minimum:
+            var.set(str(minimum))
+
+    def _step_delay(self, var, maximum, delta, minimum=0):
+        try:
+            cur = int(var.get())
+        except ValueError:
+            cur = minimum
+        var.set(str(max(minimum, min(maximum, cur + delta))))
 
     def start(self):
         if self.running:
